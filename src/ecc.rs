@@ -212,7 +212,7 @@ impl Ecc {
             &EccCommand::nonce(DataBuffer::MessageDigest, Bytes::copy_from_slice(&digest)),
             true,
             false,
-            1,
+            3,
         )?;
         self.send_command_retries(
             &EccCommand::sign(DataBuffer::MessageDigest, key_slot),
@@ -268,7 +268,7 @@ impl Ecc {
             buf.put_u8(self.transport.put_command_flag());
             command.bytes_into(&mut buf);
 
-            if wake {
+            if wake && retry == 0 {
                 self.transport.send_wake(wake_delay)?;
             }
 
@@ -284,7 +284,14 @@ impl Ecc {
                     }
                     return Ok(bytes);
                 }
-                EccResponse::Error(err) if err.is_recoverable() && retry < retries => continue,
+                EccResponse::Error(err) if err.is_recoverable() && retry < retries => {
+					if retry > 0 {
+						// try recover
+						self.transport.send_sleep();
+						self.transport.send_wake(2 * wake_delay)?;
+					}
+                    continue;
+                }
                 EccResponse::Error(err) => {
                     self.transport.send_sleep();
                     return Err(Error::ecc(err));
